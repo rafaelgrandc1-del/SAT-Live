@@ -334,34 +334,21 @@ app.post('/api/auth/logout', (req, res) => {
 });
 
 // -----------------------------------------------------------------------------
-// VITE OR STATIC FILE SERVING MIDDLEWARE
+// STATIC FILE SERVING MIDDLEWARE (Servindo diretamente os arquivos estáticos da raiz)
 // -----------------------------------------------------------------------------
 async function startServer() {
-  if (process.env.NODE_ENV !== 'production') {
-    // Dynamic import for Vite inside dev development
-    const { createServer: createViteServer } = await import('vite');
-    const viteInstance = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
-    });
-    
-    // Serve Vite standard frontend pages
-    app.use(viteInstance.middlewares);
-    console.log('[Dev Server] Vite middleware integrated successfully.');
-  } else {
-    // Serve optimized production static built pages
-    const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    
-    // Catch-all route to serve index.html for React SPA Router compatibility
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
-    console.log('[Production Server] Serving compiled assets from:', distPath);
-  }
+  const rootDir = process.cwd();
+  
+  // Serve static files (style.css, script.js, config, etc.) from the root repo directory
+  app.use(express.static(rootDir));
+  
+  // Custom fallback route to server the main index.html file directly
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(rootDir, 'index.html'));
+  });
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[SAT Live Server] Server successfully running at http://localhost:${PORT}`);
+    console.log(`[SAT Live Server] Running perfectly as a pure static router proxy on port ${PORT}`);
   });
 }
 
