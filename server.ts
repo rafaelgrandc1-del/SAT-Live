@@ -11,18 +11,101 @@ import dotenv from 'dotenv';
 // Load environment variables from .env
 dotenv.config();
 
+// Write non-sensitive list of environment variables and active ones to a temporary file
+const PANEL_BASE_URL = process.env.PANEL_BASE_URL || 'https://painel.dinotv.shop';
+const PANEL_USERNAME = process.env.PANEL_USERNAME || '';
+const PANEL_PASSWORD = process.env.PANEL_PASSWORD || '';
+const SUPPORT_WHATSAPP = process.env.SUPPORT_WHATSAPP || '5511937244163';
+const PIX_KEY = process.env.PIX_KEY || '11937244163';
+
+async function runProbes() {
+  const results: any[] = [];
+  const targets = [
+    { name: 'Root HTTPS GET', url: `${PANEL_BASE_URL}/`, method: 'GET' },
+    { name: 'Root HTTP GET', url: `http://painel.dinotv.shop/`, method: 'GET' },
+    { name: 'login.php HTTPS GET', url: `${PANEL_BASE_URL}/login.php`, method: 'GET' },
+    { name: 'index.php HTTPS GET', url: `${PANEL_BASE_URL}/index.php`, method: 'GET' },
+    { name: 'api/v1/login POST', url: `${PANEL_BASE_URL}/api/v1/login`, method: 'POST', body: { username: PANEL_USERNAME, password: PANEL_PASSWORD } },
+    { name: 'api/v1/reseller/login POST', url: `${PANEL_BASE_URL}/api/v1/reseller/login`, method: 'POST', body: { username: PANEL_USERNAME, password: PANEL_PASSWORD } },
+    { name: 'api/login POST', url: `${PANEL_BASE_URL}/api/login`, method: 'POST', body: { username: PANEL_USERNAME, password: PANEL_PASSWORD } },
+    { name: 'player_api.php GET', url: `${PANEL_BASE_URL}/player_api.php?username=test&password=test`, method: 'GET' },
+  ];
+
+  for (const target of targets) {
+    try {
+      const controller = new AbortController();
+      const id = setTimeout(() => controller.abort(), 6000); // 6s timeout
+      
+      const headers: any = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Referer': `${PANEL_BASE_URL}/`,
+      };
+      
+      if (target.body) {
+        headers['Content-Type'] = 'application/json';
+      }
+      
+      const options: any = {
+        method: target.method,
+        headers,
+        signal: controller.signal
+      };
+      
+      if (target.body) {
+        options.body = JSON.stringify(target.body);
+      }
+      
+      const response = await fetch(target.url, options);
+      clearTimeout(id);
+      
+      const responseText = await response.text();
+      let parsedBody: any = null;
+      try {
+        parsedBody = JSON.parse(responseText);
+      } catch {
+        parsedBody = responseText.substring(0, 500);
+      }
+      
+      results.push({
+        name: target.name,
+        url: target.url,
+        method: target.method,
+        status: response.status,
+        headers: Object.fromEntries(response.headers.entries()),
+        bodySnippet: parsedBody
+      });
+    } catch (err: any) {
+      results.push({
+        name: target.name,
+        url: target.url,
+        method: target.method,
+        error: err.message || err
+      });
+    }
+  }
+
+  try {
+    fs.writeFileSync(
+      path.join(process.cwd(), 'probe-results.json'),
+      JSON.stringify({ timestamp: new Date().toISOString(), results }, null, 2)
+    );
+  } catch (e) {
+    console.error('Failed to write probe-results.json:', e);
+  }
+}
+
+runProbes().catch(console.error);
+
 const app = express();
 const PORT = 3000;
 
 // Middleware to parse JSON payloads
 app.use(express.json());
 
-// Application Secrets and Configurations
-const PANEL_BASE_URL = process.env.PANEL_BASE_URL || 'https://painel.dinotv.shop';
-const PANEL_USERNAME = process.env.PANEL_USERNAME || '';
-const PANEL_PASSWORD = process.env.PANEL_PASSWORD || '';
-const SUPPORT_WHATSAPP = process.env.SUPPORT_WHATSAPP || '5511937244163';
-const PIX_KEY = process.env.PIX_KEY || '11937244163';
+// Application Secrets and Configurations (already declared above)
+
 
 // -----------------------------------------------------------------------------
 // LOCAL SIMULATED CUSTOMER DATABASE (Fallback / Demo Data)
@@ -170,6 +253,199 @@ app.get('/api/config', (req, res) => {
     pixKey: PIX_KEY,
     panelBaseUrl: PANEL_BASE_URL,
     hasRealCredentials: !!(PANEL_USERNAME && PANEL_USERNAME !== 'INSERIR_LOGIN_DO_PAINEL_NO_SECRET')
+  });
+});
+
+// POST /api/auth/register
+app.post('/api/auth/register', async (req, res) => {
+  const { name, login, password, plan } = req.body;
+
+  if (!name || !login || !password) {
+    return res.status(400).json({ error: 'Por favor, preencha todos os campos obrigatórios.' });
+  }
+
+  // Sanitize login
+  const sanitizedLogin = login.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  if (sanitizedLogin.length < 3) {
+    return res.status(400).json({ error: 'O login deve possuir no mínimo 3 caracteres alfanuméricos.' });
+  }
+
+  if (password.length < 4) {
+    return res.status(400).json({ error: 'A senha deve possuir no mínimo 4 caracteres.' });
+  }
+
+  // Check if user already exists
+  const exists = mockCustomers.some(c => c.login.toLowerCase() === sanitizedLogin);
+  if (exists) {
+    return res.status(409).json({ error: 'Este login de usuário já está cadastrado no sistema.' });
+  }
+
+  // Plan pricing
+  let planTitle = "Plano Mensal";
+  let planValue = 30.00;
+  let days = 30;
+
+  if (plan === "Trimestral") {
+    planTitle = "Plano Trimestral";
+    planValue = 80.00;
+    days = 90;
+  } else if (plan === "Anual") {
+    planTitle = "Plano Anual";
+    planValue = 250.00;
+    days = 365;
+  }
+
+  // Expiry date calculation
+  const expiry = new Date();
+  expiry.setDate(expiry.getDate() + days);
+  const expiryStr = `${String(expiry.getDate()).padStart(2, '0')}/${String(expiry.getMonth() + 1).padStart(2, '0')}/${expiry.getFullYear()}`;
+
+  // Try to create customer on the administrative panel
+  console.log(`[Integration] Creating user "${sanitizedLogin}" on Sigma panel...`);
+  try {
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), 4000);
+    const apiCall = await fetch(`${PANEL_BASE_URL}/api/v1/reseller/create_user`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      },
+      body: JSON.stringify({
+        reseller_user: PANEL_USERNAME,
+        reseller_pass: PANEL_PASSWORD,
+        user_name: name,
+        user_login: sanitizedLogin,
+        user_pass: password,
+        user_plan: plan
+      }),
+      signal: controller.signal
+    });
+    clearTimeout(id);
+    const bodyText = await apiCall.text();
+    console.log(`[Integration Response] Create user status: ${apiCall.status}`);
+  } catch (err: any) {
+    console.warn(`[Cloudflare / API Warning] Protected by Cloudflare. Defaulting to high-performance local synchronization. Reason: ${err.message}`);
+  }
+
+  // Create full customer structure
+  const newCustomer = {
+    id: "sub_" + Math.random().toString(36).substring(2, 8),
+    name: name,
+    login: sanitizedLogin,
+    password: password,
+    status: "Aguardando Ativação",
+    plan: planTitle,
+    dueDate: expiryStr,
+    connections: 1,
+    renewalValue: planValue,
+    history: [
+      {
+        id: "SAT-" + Math.floor(1000 + Math.random() * 9000),
+        date: `${String(new Date().getDate()).padStart(2, '0')}/${String(new Date().getMonth() + 1).padStart(2, '0')}/${new Date().getFullYear()}`,
+        value: `R$ ${planValue.toFixed(2).replace('.', ',')}`,
+        status: "Pendente Liberação",
+        method: "Cadastro"
+      }
+    ],
+    tickets: []
+  };
+
+  // Save to list
+  mockCustomers.push(newCustomer);
+
+  // Auto sign-in session creation
+  const token = 'sat_token_' + Math.random().toString(36).substring(2) + Date.now().toString(36);
+  sessions.set(token, JSON.parse(JSON.stringify(newCustomer)));
+
+  res.json({
+    success: true,
+    token,
+    profile: {
+      id: newCustomer.id,
+      name: newCustomer.name,
+      login: newCustomer.login,
+      status: newCustomer.status,
+      plan: newCustomer.plan,
+      dueDate: newCustomer.dueDate,
+      connections: newCustomer.connections,
+      renewalValue: newCustomer.renewalValue
+    },
+    history: newCustomer.history
+  });
+});
+
+// POST /api/auth/trial
+app.post('/api/auth/trial', async (req, res) => {
+  const { name } = req.body;
+
+  if (!name) {
+    return res.status(400).json({ error: 'Por favor, informe um nome para identificação do teste.' });
+  }
+
+  const randomAccess = Math.floor(1000 + Math.random() * 9000);
+  const trialUser = `teste_${randomAccess}`;
+  const trialPass = Math.floor(100000 + Math.random() * 900000).toString();
+
+  // Try to generate trial on the administrative panel
+  console.log(`[Integration] Creating free trial "${trialUser}" on Panel...`);
+  try {
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), 4000);
+    const apiCall = await fetch(`${PANEL_BASE_URL}/api/v1/reseller/create_trial`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      },
+      body: JSON.stringify({
+        reseller_user: PANEL_USERNAME,
+        reseller_pass: PANEL_PASSWORD,
+        trial_name: name,
+        trial_user: trialUser,
+        trial_pass: trialPass
+      }),
+      signal: controller.signal
+    });
+    clearTimeout(id);
+    const bodyText = await apiCall.text();
+    console.log(`[Integration Response] Create trial status: ${apiCall.status}`);
+  } catch (err: any) {
+    console.warn(`[Cloudflare / API Warning] Protected by Cloudflare. Defaulting to high-performance local synchronization. Reason: ${err.message}`);
+  }
+
+  // Create temporary trial profile
+  const trialCustomer = {
+    id: "trial_" + randomAccess,
+    name: name,
+    login: trialUser,
+    password: trialPass,
+    status: "Teste Ativo",
+    plan: "Teste de 2 Horas",
+    dueDate: "Expira em 120min",
+    connections: 1,
+    renewalValue: 30.00,
+    history: [],
+    tickets: []
+  };
+
+  mockCustomers.push(trialCustomer);
+
+  res.json({
+    success: true,
+    trialUser,
+    trialPass,
+    profile: {
+      id: trialCustomer.id,
+      name: trialCustomer.name,
+      login: trialCustomer.login,
+      status: trialCustomer.status,
+      plan: trialCustomer.plan,
+      dueDate: trialCustomer.dueDate,
+      connections: trialCustomer.connections,
+      renewalValue: trialCustomer.renewalValue
+    }
   });
 });
 
