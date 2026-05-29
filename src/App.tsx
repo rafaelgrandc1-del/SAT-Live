@@ -287,8 +287,18 @@ export default function App() {
         alert(data.error || 'Erro ao registrar solicitação de renovação.');
       }
     } catch (e) {
-      console.error(e);
-      // Fallback checkout view if offline
+      console.warn('Real renew API failed, falling back to simulated payment record for GitHub Pages:', e);
+      const newRef = 'REN-' + Math.floor(1000 + Math.random() * 9000);
+      const now = new Date();
+      const dateFormatted = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
+      const simulatedRecord: PaymentHistoryItem = {
+        id: newRef,
+        date: dateFormatted,
+        value: `R$ ${(profile?.renewalValue || 30.00).toFixed(2).replace('.', ',')}`,
+        status: "Pendente Liberação",
+        method: "Pix"
+      };
+      setHistory([simulatedRecord, ...history]);
       setCurrentView('checkout');
     } finally {
       setIsRenewing(false);

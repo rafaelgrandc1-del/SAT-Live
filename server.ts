@@ -350,7 +350,7 @@ async function startServer() {
     console.log('[Dev Server] Vite middleware integrated successfully.');
   } else {
     // Serve optimized production static built pages
-    const distPath = path.join(process.cwd(), 'dist');
+    const distPath = path.join(process.cwd(), 'docs');
     app.use(express.static(distPath));
     
     // Catch-all route to serve index.html for React SPA Router compatibility
