@@ -4,11 +4,13 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "predev": "node -e \"import('fs').then(fs => { if (fs.existsSync('index-dev.html')) fs.copyFileSync('index-dev.html', 'index.html') })\"",
     "dev": "tsx server.ts",
-    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "prebuild": "node -e \"import('fs').then(fs => { if (fs.existsSync('index-dev.html')) fs.copyFileSync('index-dev.html', 'index.html') })\"",
+    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs && node postbuild.js",
     "preview": "vite preview",
     "start": "node dist/server.cjs",
-    "clean": "rm -rf dist server.js",
+    "clean": "rm -rf dist server.js assets/index-*.js assets/index-*.css",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
